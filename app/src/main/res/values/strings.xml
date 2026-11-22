@@ -1,0 +1,13 @@
+<resources>
+    <string name="app_name">汽水听歌助手</string>
+    <string name="service_description">在你开始任务后，读取汽水音乐广告页面并在本机识别文字，等待广告完成、点击领奖，取消直播跳转或退出误入的直播间。按音量减键或点悬浮按钮可随时暂停。不会修改广告时长或会员权益。</string>
+    <style name="AppTheme" parent="android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:colorAccent">#245FDC</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:statusBarColor">#F3F6FC</item>
+        <item name="android:navigationBarColor">#F3F6FC</item>
+        <item name="android:windowActionModeOverlay">true</item>
+        <item name="android:windowLightNavigationBar">true</item>
+    </style>
+</resources>
