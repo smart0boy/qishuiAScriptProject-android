@@ -11,7 +11,10 @@ public final class FlowEngine {
     public static final String TARGET = "com.luna.music";
     public static final double[] TOP = {.45, .015, 1, .23}, MIDDLE = {.07, .23, .93, .76}, LIVE = {.05, .40, .95, .88};
     static final String COUNTDOWN = "\\d+秒(?:后)?(?:可)?(?:领取|领|获得|获取|关闭)";
-    static final String COMPLETE = "^(?:领取成功|奖励已领取|奖励已到账|已获得奖励)[×xX✕✖]?$";
+    /** 完成提示后面常带无障碍角色说明，如「领取成功,关闭,按钮」「领取成功，关闭」。 */
+    static final String COMPLETE = "^(?:领取成功|已领取成功|奖励已领取|奖励已到账|已获得奖励|已领取)(?:[,，]?(?:关闭|按钮|确定|确认|好的|知道了))*[×xX✕✖]?$";
+    /** 宽松版：只要文字里出现完成文案就算，不要求从头匹配。仅在确认正在放广告（顶部有倒计时）时作为兜底使用。 */
+    static final String COMPLETE_LOOSE = "(?:领取成功|已领取成功|成功领取|奖励已领取|奖励已到账|已获得奖励|已领取)";
     static final String CLOSE = "^(?:关闭|×|✕|✖|x|X)$";
     static final String REWARD = "^(?:领取奖励|立即领取|确认领取)$";
     static final Pattern LIVE_PROMPT = Pattern.compile("(?:(?:\\d{1,3}|[一二三四五六七八九十几]+)(?:秒|[sS])后(?:将|自动)?|即将(?:自动)?)(?:进入|前往|跳转(?:到|至)?)直播[间間]");
@@ -44,6 +47,11 @@ public final class FlowEngine {
             return s.width > 0 && s.height > 0 && x >= 0 && y >= 0 && x < s.width && y < s.height
                 && x / s.width >= r[0] && y / s.height >= r[1] && x / s.width <= r[2] && y / s.height <= r[3];
         }
+        /** 文字块与区域是否有交叠：合并成一整行的长文案只压到半个屏幕时，中心点可能落在区域外。 */
+        public boolean overlaps(Screen s, double[] r) {
+            if (s.width <= 0 || s.height <= 0) return false;
+            return left < r[2] * s.width && right > r[0] * s.width && top < r[3] * s.height && bottom > r[1] * s.height;
+        }
     }
     public static final class Screen {
         public final int width, height;
@@ -67,6 +75,26 @@ public final class FlowEngine {
             Pattern pattern = Pattern.compile(regex);
             for (Token t : tokens) if (t.inside(this, region) && pattern.matcher(compact(t.text)).find()) return true;
             return false;
+        }
+        /** 同类文字出现多次时（原始节点 + OCR 各认了一遍）取最靠上的那一个，而不是放弃。 */
+        public Token findFirst(String regex, double[] region) {
+            Pattern pattern = Pattern.compile(regex);
+            Token best = null;
+            for (Token t : tokens) if (t.inside(this, region) && pattern.matcher(compact(t.text)).find()) {
+                if (best == null || t.y < best.y || (t.y == best.y && t.x < best.x)) best = t;
+            }
+            return best;
+        }
+        /** 同一块文字里同时出现倒计时和完成文案（如「20秒后可领取奖励|领取成功」）。 */
+        public Token findMerged(String done, String clock, double[] region) {
+            Pattern donePattern = Pattern.compile(done), clockPattern = Pattern.compile(clock);
+            Token best = null;
+            for (Token t : tokens) {
+                String text = compact(t.text);
+                if (!t.overlaps(this, region) || !clockPattern.matcher(text).find() || !donePattern.matcher(text).find()) continue;
+                if (best == null || t.y < best.y || (t.y == best.y && t.x < best.x)) best = t;
+            }
+            return best;
         }
     }
     public static final class Decision {
@@ -109,7 +137,7 @@ public final class FlowEngine {
         return unique.size() == 1 ? unique.get(0).renamed("取消") : null;
     }
     public static Token findLiveExit(Screen s) {
-        if (s.width <= 0 || s.height <= 0 || s.has(COUNTDOWN, TOP) || s.has(COMPLETE, TOP) || findLiveCancel(s) != null) return null;
+        if (s.width <= 0 || s.height <= 0 || s.has(COUNTDOWN, TOP) || findCompletion(s) != null || findLiveCancel(s) != null) return null;
         int markers = 0;
         if (s.has("^更多直播[>›]?$", new double[]{.55, .04, 1, .20})) markers++;
         if (s.has("^\\+?关注$", new double[]{0, .015, .65, .16})) markers++;
@@ -117,6 +145,16 @@ public final class FlowEngine {
         if (markers < 2) return null;
         Token close = s.find("^(?:退出直播间|关闭直播间|关闭|×|✕|✖|[1lI|]?[xX])$", new double[]{.82, .015, 1, .14});
         return close == null ? null : close.renamed("退出直播间");
+    }
+    /**
+     * 只在右上角（TOP）找完成提示：先严格匹配整块文字，再处理「倒计时|领取成功」这种被读成一整块的
+     * 合并文案——同一块文字里同时出现倒计时和完成文案才算，区域用交叠判定，避免长行中心偏出右上角。
+     */
+    public static Token findCompletion(Screen s) {
+        Token t = s.find(COMPLETE, TOP);
+        if (t == null) t = s.findFirst(COMPLETE, TOP);
+        if (t == null) t = s.findMerged(COMPLETE_LOOSE, COUNTDOWN, TOP);
+        return t;
     }
     public final Settings settings;
     public String phase = "WAIT_AD", stopReason = "";
@@ -147,7 +185,7 @@ public final class FlowEngine {
             return Decision.tap("退出直播间，返回广告", exit, "exit_live");
         }
         boolean countdown = s.has(COUNTDOWN, TOP);
-        Token complete = s.find(COMPLETE, TOP), reward = s.find(REWARD, MIDDLE);
+        Token complete = findCompletion(s), reward = s.find(REWARD, MIDDLE);
         if (now - lastClick < 1.3) return Decision.waitFor("等待页面响应");
         if (returnPending && (countdown || complete != null || reward != null)) {
             returnPending = false; liveExitAttempts = 0;
