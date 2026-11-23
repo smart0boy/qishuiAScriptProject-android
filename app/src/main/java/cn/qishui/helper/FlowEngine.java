@@ -13,6 +13,7 @@ public final class FlowEngine {
     static final String COUNTDOWN = "\\d+秒(?:后)?(?:可)?(?:领取|领|获得|获取|关闭)";
     static final String COMPLETE = "^(?:领取成功|奖励已领取|奖励已到账|已获得奖励)[×xX✕✖]?$";
     static final String CLOSE = "^(?:关闭|×|✕|✖|x|X)$";
+    static final String REWARD = "^(?:领取奖励|立即领取|确认领取)$";
     static final Pattern LIVE_PROMPT = Pattern.compile("(?:(?:\\d{1,3}|[一二三四五六七八九十几]+)(?:秒|[sS])后(?:将|自动)?|即将(?:自动)?)(?:进入|前往|跳转(?:到|至)?)直播[间間]");
 
     public static String compact(String s) {
@@ -146,7 +147,7 @@ public final class FlowEngine {
             return Decision.tap("退出直播间，返回广告", exit, "exit_live");
         }
         boolean countdown = s.has(COUNTDOWN, TOP);
-        Token complete = s.find(COMPLETE, TOP), reward = s.find("^(?:领取奖励|立即领取|确认领取)$", MIDDLE);
+        Token complete = s.find(COMPLETE, TOP), reward = s.find(REWARD, MIDDLE);
         if (now - lastClick < 1.3) return Decision.waitFor("等待页面响应");
         if (returnPending && (countdown || complete != null || reward != null)) {
             returnPending = false; liveExitAttempts = 0;
@@ -162,14 +163,15 @@ public final class FlowEngine {
         }
         if (phase.equals("VERIFY")) return Decision.waitFor("正在确认领奖后的页面变化");
         if (phase.equals("WAIT_REWARD")) return reward != null ? Decision.tap("点击领取奖励", reward, "reward") : Decision.waitFor("等待奖励弹窗");
+        // 奖励已到账：即便画面上还残留着“N秒后可领取”的旧文案，也要立刻关掉完成页，不再等倒计时。
+        if (complete != null) {
+            Token close = s.find(CLOSE, TOP);
+            return Decision.tap("领取成功，关闭完成页", close == null ? complete : close, "complete");
+        }
         if (countdown) {
             if (!phase.equals("WATCHING")) phase("WATCHING", now);
             if (now - phaseSince > 150) return stop("广告等待超时，请检查当前页面");
             return Decision.waitFor("广告倒计时中，等待正常播放完成");
-        }
-        if (complete != null) {
-            Token close = s.find(CLOSE, TOP);
-            return Decision.tap("广告显示完成，关闭完成页", close == null ? complete : close, "complete");
         }
         Token resume = s.find("^继续观看$", MIDDLE);
         if (phase.equals("WATCHING") && resume != null && s.has("放弃奖励|坚持退出|还差|继续观看.*(?:奖励|秒)", MIDDLE)) return Decision.tap("恢复尚未完成的广告", resume, "resume");
