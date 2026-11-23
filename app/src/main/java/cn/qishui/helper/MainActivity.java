@@ -84,7 +84,7 @@ public final class MainActivity extends Activity {
         text(guide, "出现直播预告会优先点取消；已进入直播间时，会识别右上角 X 返回广告。广告正常播放，程序不修改计时或会员权益。", 14, 0xFF405A75);
         text(guide, "按音量减键或打开悬浮菜单可暂停。请保持亮屏；切换应用后会暂停。按钮按当前画面定位，换设备或调整字体大小后先试跑。", 14, 0xFF405A75);
         text(guide, "支持 Android 11 及以上；无需安装 AScript。识别模型已包含在安装包内。", 12, 0xFF61708A);
-        text(page, "版本 " + BuildConfig.VERSION_NAME + " · 独立版\n日志仅存本机，用于检查识别和点击结果。", 12, 0xFF61708A);
+        text(page, "版本 " + BuildConfig.VERSION_NAME + " · 改版4 · 只认右上角\n日志仅存本机，用于检查识别和点击结果。", 12, 0xFF61708A);
     }
     private LinearLayout card(LinearLayout parent) {
         LinearLayout box = new LinearLayout(this); box.setOrientation(LinearLayout.VERTICAL); box.setPadding(dp(16), dp(14), dp(16), dp(14)); box.setBackground(background(Color.WHITE, 16));
